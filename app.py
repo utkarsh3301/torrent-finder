@@ -225,14 +225,29 @@ def proxied(url, params=None, timeout=12):
 
 # ── Sources ───────────────────────────────────────────────────────────────────
 
+def _tpb_fetch(query):
+    """Fetch from apibay.org; fall back to proxy when data-center IP is blocked."""
+    url    = 'https://apibay.org/q.php'
+    params = {'q': query, 'cat': '0'}
+    try:
+        r = _session.get(url, params=params, timeout=5)
+        if r.text.strip():          # non-empty → data center not blocked
+            return r.json()
+    except Exception:
+        pass
+    # Empty body = data-center IP blocked by apibay — try via proxy
+    p = get_proxy()
+    if not p:
+        raise Exception('apibay blocked and no proxy available yet')
+    r = requests.get(url, params=params, headers=HEADERS,
+                     proxies={'http': f'http://{p}', 'https': f'http://{p}'},
+                     timeout=12)
+    return r.json()
+
+
 def search_tpb(query):
     try:
-        r = _session.get(
-            'https://apibay.org/q.php',
-            params={'q': query, 'cat': '0'},
-            timeout=10,
-        )
-        data = r.json()
+        data = _tpb_fetch(query)
         if not data or data[0].get('name') == 'No results returned':
             return []
 
@@ -394,6 +409,59 @@ def search_1337x(query):
         return []
 
 
+def search_knaben(query):
+    """Knaben meta-search — public API, works from data center IPs."""
+    try:
+        r = _session.get(
+            'https://knaben.eu/api/v1/',
+            params={
+                'search': query,
+                'order_by': 'seeders',
+                'order_direction': 'desc',
+                'rows': 20,
+            },
+            timeout=10,
+        )
+        data  = r.json()
+        hits  = data.get('hits', [])
+        results = []
+        for item in hits:
+            ih     = item.get('infohash') or item.get('info_hash', '')
+            name   = item.get('title') or item.get('name', '')
+            seeds  = int(item.get('seeders') or 0)
+            leeches = int(item.get('leechers') or 0)
+            size   = item.get('size') or 0
+            if not ih or not name:
+                continue
+            is_tv = bool(re.search(r's\d{2}e\d{2}|season|episode', name.lower()))
+            results.append({
+                'title':           name,
+                'year':            '',
+                'rating':          0,
+                'genres':          [],
+                'poster':          '',
+                'type':            'tv' if is_tv else 'movie',
+                'source':          'Knaben',
+                'uploader_status': 'member',
+                'uploader':        '',
+                '_base':           clean_title(name),
+                '_ctype':          'tv' if is_tv else 'movie',
+                'torrents': [{
+                    'quality': get_quality(name),
+                    'type':    '',
+                    'size':    format_size(size),
+                    'seeds':   seeds,
+                    'peers':   leeches,
+                    'magnet':  build_magnet(ih, name),
+                }],
+            })
+        results.sort(key=lambda x: x['torrents'][0]['seeds'], reverse=True)
+        return results
+    except Exception as e:
+        app.logger.warning(f'Knaben: {e}')
+        return []
+
+
 # ── Poster enrichment ─────────────────────────────────────────────────────────
 
 def _fetch_poster(title, ctype):
@@ -481,11 +549,12 @@ def search():
         return jsonify({'results': cached, 'count': len(cached),
                         'proxy_active': bool(get_proxy()), 'cached': True})
 
-    with concurrent.futures.ThreadPoolExecutor(max_workers=3) as ex:
-        tpb_f = ex.submit(search_tpb,   query)
-        yts_f = ex.submit(search_yts,   query)
-        x13_f = ex.submit(search_1337x, query)
-        results = [*tpb_f.result(), *yts_f.result(), *x13_f.result()]
+    with concurrent.futures.ThreadPoolExecutor(max_workers=4) as ex:
+        tpb_f = ex.submit(search_tpb,    query)
+        yts_f = ex.submit(search_yts,    query)
+        x13_f = ex.submit(search_1337x,  query)
+        knb_f = ex.submit(search_knaben, query)
+        results = [*tpb_f.result(), *yts_f.result(), *x13_f.result(), *knb_f.result()]
 
     results = enrich_posters(results)
     results = mark_best_pick(results)
