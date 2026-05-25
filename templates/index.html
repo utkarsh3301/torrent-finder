@@ -1,0 +1,548 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>TorrentFinder</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet" />
+  <style>
+    *, *::before, *::after { margin: 0; padding: 0; box-sizing: border-box; }
+
+    :root {
+      --glass:        rgba(255,255,255,0.04);
+      --glass-border: rgba(255,255,255,0.08);
+      --glass-hover:  rgba(255,255,255,0.07);
+      --text:         #ffffff;
+      --muted:        rgba(255,255,255,0.45);
+      --accent:       #7c6fff;
+      --accent2:      #ff6b9d;
+      --cyan:         #00d2ff;
+      --gold:         #ffd166;
+      --green:        #00c864;
+    }
+
+    body {
+      font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+      background: #06060f;
+      color: var(--text);
+      min-height: 100vh;
+      overflow-x: hidden;
+    }
+
+    /* ── Orbs ── */
+    .orbs { position:fixed; inset:0; pointer-events:none; z-index:0; overflow:hidden; }
+    .orb  { position:absolute; border-radius:50%; filter:blur(90px); }
+    .orb-1 { width:640px;height:640px;background:radial-gradient(circle,rgba(124,111,255,.28) 0%,transparent 70%);top:-180px;left:-120px;animation:drift1 28s ease-in-out infinite; }
+    .orb-2 { width:520px;height:520px;background:radial-gradient(circle,rgba(255,107,157,.20) 0%,transparent 70%);bottom:-160px;right:-100px;animation:drift2 34s ease-in-out infinite; }
+    .orb-3 { width:420px;height:420px;background:radial-gradient(circle,rgba(0,210,255,.15) 0%,transparent 70%);top:42%;left:52%;transform:translate(-50%,-50%);animation:drift3 22s ease-in-out infinite; }
+    @keyframes drift1 { 0%,100%{transform:translate(0,0)}33%{transform:translate(40px,-40px)}66%{transform:translate(-30px,30px)} }
+    @keyframes drift2 { 0%,100%{transform:translate(0,0)}33%{transform:translate(-35px,35px)}66%{transform:translate(25px,-25px)} }
+    @keyframes drift3 { 0%,100%{transform:translate(-50%,-50%)}50%{transform:translate(-46%,-54%)} }
+
+    /* ── Layout ── */
+    .wrap { position:relative;z-index:1;max-width:1200px;margin:0 auto;padding:0 24px; }
+
+    header { padding:20px 0;display:flex;align-items:center;justify-content:space-between; }
+    .logo  { font-size:1.25rem;font-weight:700;letter-spacing:-.5px;background:linear-gradient(135deg,var(--accent),var(--accent2));-webkit-background-clip:text;-webkit-text-fill-color:transparent;background-clip:text; }
+
+    /* ── Proxy pill ── */
+    .proxy-pill { display:flex;align-items:center;gap:6px;padding:6px 14px;border-radius:100px;font-size:.75rem;font-weight:500;transition:all .4s ease; }
+    .proxy-pill .dot { width:7px;height:7px;border-radius:50%;flex-shrink:0; }
+    .proxy-pill.active    { background:rgba(0,200,100,.1);  color:var(--green); border:1px solid rgba(0,200,100,.25); }
+    .proxy-pill.active .dot { background:var(--green);box-shadow:0 0 6px var(--green); }
+    .proxy-pill.searching { background:rgba(255,165,0,.1);  color:#ffa500;     border:1px solid rgba(255,165,0,.25);animation:pulse-b 2s ease-in-out infinite; }
+    .proxy-pill.searching .dot { background:#ffa500;animation:blink 1.2s ease-in-out infinite; }
+    .proxy-pill.off       { background:rgba(255,255,255,.04);color:var(--muted);border:1px solid var(--glass-border); }
+    .proxy-pill.off .dot  { background:var(--muted); }
+    @keyframes blink   { 0%,100%{opacity:1}50%{opacity:.3} }
+    @keyframes pulse-b { 0%,100%{border-color:rgba(255,165,0,.25)}50%{border-color:rgba(255,165,0,.5)} }
+
+    /* ── Hero ── */
+    .hero { text-align:center;padding:72px 0 52px;transition:padding .45s ease; }
+    .hero.compact { padding:28px 0 22px; }
+    .hero-title { font-size:clamp(2.4rem,6vw,3.8rem);font-weight:700;line-height:1.1;margin-bottom:14px; }
+    .hero-title .grad { background:linear-gradient(135deg,var(--accent),var(--accent2));-webkit-background-clip:text;-webkit-text-fill-color:transparent;background-clip:text; }
+    .hero-sub { color:var(--muted);font-size:1.05rem;margin-bottom:44px; }
+    .hero.compact .hero-title,.hero.compact .hero-sub { display:none; }
+
+    /* ── Search ── */
+    .search-wrap { max-width:680px;margin:0 auto 20px; }
+    .search-bar { display:flex;align-items:center;gap:10px;background:rgba(255,255,255,.05);backdrop-filter:blur(24px);-webkit-backdrop-filter:blur(24px);border:1px solid var(--glass-border);border-radius:18px;padding:6px 6px 6px 20px;transition:border-color .25s,box-shadow .25s,background .25s; }
+    .search-bar:focus-within { border-color:rgba(124,111,255,.5);box-shadow:0 0 0 1px rgba(124,111,255,.25),0 0 32px rgba(124,111,255,.18);background:rgba(255,255,255,.07); }
+    .search-input { flex:1;background:none;border:none;outline:none;color:var(--text);font:1rem/1 'Inter',sans-serif;padding:13px 0; }
+    .search-input::placeholder { color:rgba(255,255,255,.28); }
+    .search-btn { padding:12px 26px;border:none;border-radius:13px;cursor:pointer;background:linear-gradient(135deg,var(--accent),var(--accent2));color:#fff;font:600 .92rem/1 'Inter',sans-serif;transition:opacity .2s,transform .15s;white-space:nowrap; }
+    .search-btn:hover  { opacity:.88;transform:scale(1.02); }
+    .search-btn:active { transform:scale(.97); }
+
+    /* ── Filter chips ── */
+    .filters { display:flex;gap:8px;justify-content:center;flex-wrap:wrap; }
+    .chip { padding:8px 20px;border-radius:100px;cursor:pointer;border:1px solid var(--glass-border);background:var(--glass);color:var(--muted);font:500 .84rem/1 'Inter',sans-serif;transition:all .2s; }
+    .chip:hover  { border-color:rgba(124,111,255,.4);color:var(--text); }
+    .chip.active { background:rgba(124,111,255,.18);border-color:rgba(124,111,255,.45);color:var(--text); }
+
+    /* ── Results header ── */
+    .results { padding-bottom:80px; }
+    .results-hdr { display:none;align-items:center;justify-content:space-between;margin-bottom:20px;padding:0 2px; }
+    .results-hdr.show { display:flex; }
+    .results-count { color:var(--muted);font-size:.88rem; }
+    .results-count b { color:var(--text); }
+
+    /* ── View toggle ── */
+    .view-toggle { display:flex;gap:4px;align-items:center; }
+    .view-btn {
+      width:34px;height:34px;
+      display:flex;align-items:center;justify-content:center;
+      border-radius:9px;cursor:pointer;
+      border:1px solid var(--glass-border);
+      background:var(--glass);color:var(--muted);
+      transition:all .2s;
+    }
+    .view-btn:hover  { border-color:rgba(124,111,255,.4);color:var(--text); }
+    .view-btn.active { background:rgba(124,111,255,.18);border-color:rgba(124,111,255,.45);color:var(--text); }
+    .view-btn svg    { display:block; }
+
+    /* ═══════════════════════════════════════════════
+       GRID VIEW  (default)
+    ═══════════════════════════════════════════════ */
+    #grid {
+      display:grid;
+      grid-template-columns:repeat(auto-fill,minmax(320px,1fr));
+      gap:18px;
+    }
+
+    /* Bigger posters in grid */
+    #grid .poster    { width:92px;height:134px;border-radius:11px;object-fit:cover;flex-shrink:0;background:rgba(255,255,255,.05); }
+    #grid .poster-ph { width:92px;height:134px;border-radius:11px;flex-shrink:0;background:linear-gradient(135deg,rgba(124,111,255,.2),rgba(255,107,157,.2));display:flex;align-items:center;justify-content:center;font-size:2.1rem; }
+
+    /* Hide list-only elements in grid */
+    #grid .list-quick { display:none; }
+
+    /* ═══════════════════════════════════════════════
+       LIST VIEW
+    ═══════════════════════════════════════════════ */
+    #grid.list {
+      display:flex;
+      flex-direction:column;
+      gap:8px;
+    }
+
+    /* Smaller posters in list */
+    #grid.list .poster    { width:46px;height:66px;border-radius:8px;object-fit:cover;flex-shrink:0;background:rgba(255,255,255,.05); }
+    #grid.list .poster-ph { width:46px;height:66px;border-radius:8px;flex-shrink:0;font-size:1.2rem;background:linear-gradient(135deg,rgba(124,111,255,.2),rgba(255,107,157,.2));display:flex;align-items:center;justify-content:center; }
+
+    /* Override card-top to be a single horizontal row */
+    #grid.list .card-top  { padding:10px 18px;align-items:center;gap:14px; }
+    #grid.list .card-info { flex-direction:row;align-items:center;gap:12px;flex:1;min-width:0; }
+    #grid.list .card-title { flex:1;min-width:0;-webkit-line-clamp:1; }
+
+    /* Hide extras in list view */
+    #grid.list .card-rating,
+    #grid.list .genres,
+    #grid.list .expand-hint { display:none; }
+
+    /* Show list-only quick stats */
+    #grid.list .list-quick {
+      display:flex;align-items:center;gap:10px;flex-shrink:0;
+    }
+
+    /* Badges more compact in list */
+    #grid.list .card-badges { gap:4px;flex-wrap:nowrap; }
+
+    /* List expand arrow — replace expand-hint with a subtle arrow on the row */
+    #grid.list .card-top::after {
+      content:'▾';
+      font-size:.85rem;
+      color:var(--muted);
+      flex-shrink:0;
+      margin-left:4px;
+      transition:transform .3s;
+    }
+    #grid.list .card.open .card-top::after { transform:rotate(180deg); }
+
+    /* ── Card (shared) ── */
+    .card {
+      background:var(--glass);
+      backdrop-filter:blur(20px);-webkit-backdrop-filter:blur(20px);
+      border:1px solid var(--glass-border);
+      border-radius:20px;overflow:hidden;cursor:pointer;
+      transition:transform .25s,border-color .25s,box-shadow .25s,background .25s;
+      opacity:0;transform:translateY(14px);
+      animation:pop .38s ease forwards;
+    }
+    @keyframes pop { to{opacity:1;transform:translateY(0);} }
+
+    .card:hover {
+      border-color:rgba(124,111,255,.28);
+      background:var(--glass-hover);
+      transform:translateY(-3px);
+      box-shadow:0 10px 36px rgba(0,0,0,.35),0 0 0 1px rgba(124,111,255,.08);
+    }
+    /* Don't lift in list view */
+    #grid.list .card:hover { transform:none; }
+
+    /* Best pick styling */
+    .card.best-card { border-color:rgba(255,209,102,.35);box-shadow:0 0 0 1px rgba(255,209,102,.15),0 8px 40px rgba(255,209,102,.08); }
+    .card.best-card:hover { border-color:rgba(255,209,102,.5);box-shadow:0 0 0 1px rgba(255,209,102,.25),0 12px 48px rgba(255,209,102,.12); }
+
+    .best-banner { display:flex;align-items:center;gap:12px;padding:10px 20px;background:linear-gradient(90deg,rgba(255,209,102,.12),transparent);border-bottom:1px solid rgba(255,209,102,.15); }
+    .best-crown  { font-size:1.1rem; }
+    .best-label  { font-size:.78rem;font-weight:700;color:var(--gold);letter-spacing:.05em; }
+    .best-reason { font-size:.71rem;color:rgba(255,209,102,.7);margin-top:1px; }
+
+    /* ── Card top (shared) ── */
+    .card-top  { display:flex;gap:16px;padding:20px; }
+    .card-info { flex:1;min-width:0;display:flex;flex-direction:column;gap:8px; }
+    .card-title { font-size:.97rem;font-weight:600;line-height:1.35;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden; }
+    .card-badges { display:flex;flex-wrap:wrap;gap:6px; }
+
+    /* Badges */
+    .badge { padding:3px 10px;border-radius:100px;font-size:.72rem;font-weight:500; }
+    .b-tpb   { background:rgba(124,111,255,.12);color:#b0a8ff;border:1px solid rgba(124,111,255,.2); }
+    .b-yts   { background:rgba(0,200,100,.12);  color:var(--green);border:1px solid rgba(0,200,100,.2); }
+    .b-1337x { background:rgba(255,90,90,.12);  color:#ff6060;border:1px solid rgba(255,90,90,.2); }
+    .b-type  { background:rgba(255,255,255,.05);color:var(--muted);border:1px solid var(--glass-border); }
+
+    /* Trust badge — only "Trusted", no VIP */
+    .trust-badge { background:rgba(0,210,255,.12);color:var(--cyan);border:1px solid rgba(0,210,255,.22); }
+
+    .card-rating { display:flex;align-items:center;gap:4px;font-size:.8rem;color:var(--gold); }
+    .genres { display:flex;flex-wrap:wrap;gap:5px; }
+    .genre  { font-size:.7rem;padding:2px 8px;background:rgba(255,255,255,.04);border:1px solid rgba(255,255,255,.06);border-radius:100px;color:var(--muted); }
+    .expand-hint { margin-top:auto;display:flex;align-items:center;gap:5px;font-size:.75rem;color:var(--muted); }
+    .expand-arrow { display:inline-block;transition:transform .3s; }
+    .card.open .expand-arrow { transform:rotate(180deg); }
+
+    /* Quick stats (list view only) */
+    .list-quick { display:flex;align-items:center;gap:10px;flex-shrink:0; }
+
+    /* ── Torrent list ── */
+    .torrent-list { border-top:1px solid var(--glass-border);max-height:0;overflow:hidden;transition:max-height .4s cubic-bezier(.4,0,.2,1); }
+    .card.open .torrent-list { max-height:600px; }
+
+    .t-row { display:flex;align-items:center;gap:12px;padding:11px 20px;border-bottom:1px solid rgba(255,255,255,.03);transition:background .18s; }
+    .t-row:last-child { border-bottom:none; }
+    .t-row:hover { background:rgba(255,255,255,.03); }
+
+    .q-badge { padding:5px 12px;border-radius:8px;font-size:.78rem;font-weight:700;min-width:58px;text-align:center; }
+    .q-4K    { background:rgba(255,209,102,.13);color:var(--gold);border:1px solid rgba(255,209,102,.22); }
+    .q-1080p { background:rgba(0,210,255,.13);  color:var(--cyan);border:1px solid rgba(0,210,255,.22); }
+    .q-720p  { background:rgba(124,111,255,.13);color:#b0a8ff;   border:1px solid rgba(124,111,255,.22); }
+    .q-480p  { background:rgba(255,255,255,.05);color:var(--muted);border:1px solid var(--glass-border); }
+    .q-HD    { background:rgba(124,111,255,.13);color:#b0a8ff;   border:1px solid rgba(124,111,255,.22); }
+
+    /* Smaller quality badge in list-quick */
+    .list-quick .q-badge { min-width:auto;padding:4px 10px;font-size:.73rem; }
+
+    .t-meta  { flex:1;font-size:.8rem;color:var(--muted);line-height:1.5; }
+    .t-seeds { font-size:.8rem;min-width:54px;text-align:right;font-weight:500; }
+    .s-high  { color:var(--green); }
+    .s-mid   { color:#ffa500; }
+    .s-low   { color:#ff6060; }
+
+    .t-actions { display:flex;gap:7px; }
+    .btn-copy { padding:7px 13px;border-radius:8px;cursor:pointer;border:1px solid rgba(124,111,255,.3);background:rgba(124,111,255,.1);color:#b0a8ff;font:500 .75rem/1 'Inter',sans-serif;transition:all .18s; }
+    .btn-copy:hover { background:rgba(124,111,255,.2);border-color:rgba(124,111,255,.5); }
+    .btn-open { padding:7px 13px;border-radius:8px;cursor:pointer;border:none;background:linear-gradient(135deg,var(--accent),var(--accent2));color:#fff;font:500 .75rem/1 'Inter',sans-serif;transition:opacity .18s; }
+    .btn-open:hover { opacity:.82; }
+
+    /* ── Loader / Empty ── */
+    .loader { display:none;flex-direction:column;align-items:center;gap:16px;padding:90px 0; }
+    .loader.show { display:flex; }
+    .spinner { width:46px;height:46px;border:3px solid rgba(255,255,255,.08);border-top-color:var(--accent);border-radius:50%;animation:spin .8s linear infinite; }
+    @keyframes spin { to{transform:rotate(360deg);} }
+    .loader-txt { color:var(--muted);font-size:.88rem; }
+
+    .empty { display:none;text-align:center;padding:90px 0; }
+    .empty.show { display:block; }
+    .empty-icon { font-size:3rem;margin-bottom:14px; }
+    .empty-msg  { color:var(--muted); }
+
+    /* ── Toast ── */
+    .toast { position:fixed;bottom:32px;left:50%;transform:translateX(-50%) translateY(120px);background:rgba(20,18,40,.96);backdrop-filter:blur(20px);border:1px solid rgba(124,111,255,.3);border-radius:12px;padding:12px 24px;font-size:.88rem;z-index:9999;transition:transform .3s cubic-bezier(.34,1.56,.64,1); }
+    .toast.show { transform:translateX(-50%) translateY(0); }
+
+    ::-webkit-scrollbar { width:5px; }
+    ::-webkit-scrollbar-track { background:transparent; }
+    ::-webkit-scrollbar-thumb { background:rgba(255,255,255,.1);border-radius:3px; }
+  </style>
+</head>
+<body>
+
+<div class="orbs">
+  <div class="orb orb-1"></div>
+  <div class="orb orb-2"></div>
+  <div class="orb orb-3"></div>
+</div>
+
+<div class="wrap">
+  <header>
+    <div class="logo">⚡ TorrentFinder</div>
+    <div class="proxy-pill searching" id="proxyPill">
+      <div class="dot"></div>
+      <span id="proxyLabel">Finding proxy…</span>
+    </div>
+  </header>
+
+  <div class="hero" id="hero">
+    <h1 class="hero-title">Find any <span class="grad">torrent</span><br>in seconds.</h1>
+    <p class="hero-sub">Auto-routes through a proxy to bypass ISP blocks. Picks the safest, best-seeded result for you.</p>
+
+    <div class="search-wrap">
+      <div class="search-bar">
+        <input class="search-input" id="q" type="text"
+               placeholder="Movie or TV show title…"
+               autocomplete="off" spellcheck="false" />
+        <button class="search-btn" onclick="doSearch()">Search</button>
+      </div>
+    </div>
+
+    <div class="filters">
+      <button class="chip active" onclick="setFilter(this,'all')">All</button>
+      <button class="chip"        onclick="setFilter(this,'movie')">🎬 Movies</button>
+      <button class="chip"        onclick="setFilter(this,'tv')">📺 TV Shows</button>
+    </div>
+  </div>
+
+  <div class="results">
+    <div class="loader" id="loader">
+      <div class="spinner"></div>
+      <div class="loader-txt">Searching across sources…</div>
+    </div>
+
+    <div class="empty" id="empty">
+      <div class="empty-icon">🎬</div>
+      <div class="empty-msg">No results found. Try a different title.</div>
+    </div>
+
+    <div class="results-hdr" id="rHdr">
+      <div class="results-count">Found <b id="rCount">0</b> results</div>
+
+      <!-- View toggle — top-right corner of results -->
+      <div class="view-toggle">
+        <button class="view-btn active" id="btnGrid" onclick="setView('grid')" title="Grid view">
+          <svg width="15" height="15" viewBox="0 0 15 15" fill="currentColor">
+            <rect x="1"  y="1"  width="5.5" height="5.5" rx="1.2"/>
+            <rect x="8.5" y="1"  width="5.5" height="5.5" rx="1.2"/>
+            <rect x="1"  y="8.5" width="5.5" height="5.5" rx="1.2"/>
+            <rect x="8.5" y="8.5" width="5.5" height="5.5" rx="1.2"/>
+          </svg>
+        </button>
+        <button class="view-btn" id="btnList" onclick="setView('list')" title="List view">
+          <svg width="15" height="15" viewBox="0 0 15 15" fill="currentColor">
+            <rect x="1" y="2"   width="13" height="2"   rx="1"/>
+            <rect x="1" y="6.5" width="13" height="2"   rx="1"/>
+            <rect x="1" y="11" width="13" height="2"   rx="1"/>
+          </svg>
+        </button>
+      </div>
+    </div>
+
+    <div id="grid"></div>
+  </div>
+</div>
+
+<div class="toast" id="toast"></div>
+
+<script>
+  let all = [], filter = 'all', view = 'grid';
+
+  // ── Proxy status ──
+  async function pollProxy() {
+    try {
+      const d = await fetch('/api/proxy-status').then(r => r.json());
+      const pill  = document.getElementById('proxyPill');
+      const label = document.getElementById('proxyLabel');
+      if (d.active) {
+        pill.className = 'proxy-pill active';
+        label.textContent = 'Proxy Active';
+      } else if (d.searching) {
+        pill.className = 'proxy-pill searching';
+        label.textContent = 'Finding proxy…';
+      } else {
+        pill.className = 'proxy-pill off';
+        label.textContent = 'Direct only';
+      }
+    } catch {}
+  }
+  pollProxy();
+  setInterval(pollProxy, 4000);
+
+  // ── View toggle ──
+  function setView(v) {
+    view = v;
+    const grid = document.getElementById('grid');
+    grid.className = v === 'list' ? 'list' : '';
+    document.getElementById('btnGrid').classList.toggle('active', v === 'grid');
+    document.getElementById('btnList').classList.toggle('active', v === 'list');
+  }
+
+  // ── Filter ──
+  document.getElementById('q').addEventListener('keydown', e => {
+    if (e.key === 'Enter') doSearch();
+  });
+
+  function setFilter(el, f) {
+    document.querySelectorAll('.chip').forEach(c => c.classList.remove('active'));
+    el.classList.add('active');
+    filter = f;
+    renderResults();
+  }
+
+  // ── Search ──
+  async function doSearch() {
+    const q = document.getElementById('q').value.trim();
+    if (!q) return;
+
+    document.getElementById('hero').classList.add('compact');
+    document.getElementById('loader').classList.add('show');
+    document.getElementById('grid').innerHTML = '';
+    document.getElementById('rHdr').classList.remove('show');
+    document.getElementById('empty').classList.remove('show');
+
+    try {
+      const data = await fetch('/api/search?q=' + encodeURIComponent(q)).then(r => r.json());
+      all = data.results || [];
+      renderResults();
+    } catch {
+      toast('Search failed — is the server running?');
+    } finally {
+      document.getElementById('loader').classList.remove('show');
+    }
+  }
+
+  function renderResults() {
+    const items = filter === 'all' ? all : all.filter(r => r.type === filter);
+    const grid  = document.getElementById('grid');
+    const hdr   = document.getElementById('rHdr');
+    const empty = document.getElementById('empty');
+
+    if (!items.length) {
+      hdr.classList.remove('show');
+      empty.classList.add('show');
+      grid.innerHTML = '';
+      return;
+    }
+    empty.classList.remove('show');
+    hdr.classList.add('show');
+    document.getElementById('rCount').textContent = items.length;
+
+    // Preserve current view class
+    grid.className = view === 'list' ? 'list' : '';
+    grid.innerHTML = items.map((r, i) => card(r, i)).join('');
+  }
+
+  // ── Card builder ──
+  const Q_CLS = {'4K':'q-4K','1080p':'q-1080p','720p':'q-720p','480p':'q-480p','HD':'q-HD'};
+  const SRC_CLS = { TPB: 'b-tpb', YTS: 'b-yts', '1337x': 'b-1337x' };
+
+  function seedCls(n) { return n > 100 ? 's-high' : n > 20 ? 's-mid' : 's-low'; }
+
+  function card(r, i) {
+    const isBest = r.best_pick;
+    const srcCls = SRC_CLS[r.source] || 'b-type';
+
+    // VIP and Trusted both show as "✓ Trusted" — Member shows nothing
+    const isTrusted = r.uploader_status === 'vip' || r.uploader_status === 'trusted';
+    const trustBadge = isTrusted
+      ? `<span class="badge trust-badge">✓ Trusted</span>` : '';
+
+    const poster = r.poster
+      ? `<img class="poster" src="${esc(r.poster)}" alt="" loading="lazy"
+              onerror="this.outerHTML='<div class=poster-ph>${r.type==='tv'?'📺':'🎬'}</div>'">`
+      : `<div class="poster-ph">${r.type === 'tv' ? '📺' : '🎬'}</div>`;
+
+    const bestBanner = isBest ? `
+      <div class="best-banner">
+        <span class="best-crown">👑</span>
+        <div>
+          <div class="best-label">BEST PICK</div>
+          <div class="best-reason">${esc(r.best_reason || '')}</div>
+        </div>
+      </div>` : '';
+
+    const stars  = r.rating ? `<div class="card-rating">★ ${r.rating}</div>` : '';
+    const genres = r.genres.length
+      ? `<div class="genres">${r.genres.map(g=>`<span class="genre">${esc(g)}</span>`).join('')}</div>` : '';
+
+    // Top torrent for list-view quick stats
+    const top  = r.torrents[0];
+    const qc   = Q_CLS[top.quality] || 'q-HD';
+    const sc   = seedCls(top.seeds);
+    const mag0 = escAttr(top.magnet);
+
+    const listQuick = `
+      <div class="list-quick">
+        <span class="q-badge ${qc}">${top.quality}</span>
+        <span class="t-seeds ${sc}" style="min-width:auto">↑ ${top.seeds}</span>
+        <div class="t-actions" onclick="event.stopPropagation()">
+          <button class="btn-copy" data-mag="${mag0}" onclick="copyMag(this)">Copy</button>
+          <button class="btn-open" data-mag="${mag0}" onclick="openMag(this)">Open</button>
+        </div>
+      </div>`;
+
+    const rows = r.torrents.map(t => tRow(t)).join('');
+
+    return `
+      <div class="card${isBest?' best-card':''}" style="animation-delay:${i*38}ms" onclick="toggle(this)">
+        ${bestBanner}
+        <div class="card-top">
+          ${poster}
+          <div class="card-info">
+            <div class="card-title">${esc(r.title)}</div>
+            <div class="card-badges">
+              <span class="badge ${srcCls}">${r.source}</span>
+              ${trustBadge}
+              <span class="badge b-type">${r.type==='tv'?'📺 TV':'🎬 Movie'}</span>
+              ${r.year ? `<span class="badge b-type">${r.year}</span>` : ''}
+            </div>
+            ${stars}${genres}
+            <div class="expand-hint">
+              ${r.torrents.length} torrent${r.torrents.length!==1?'s':''} available
+              <span class="expand-arrow">▾</span>
+            </div>
+          </div>
+          ${listQuick}
+        </div>
+        <div class="torrent-list">${rows}</div>
+      </div>`;
+  }
+
+  function tRow(t) {
+    const qc  = Q_CLS[t.quality] || 'q-HD';
+    const sc  = seedCls(t.seeds);
+    const mag = escAttr(t.magnet);
+    return `
+      <div class="t-row">
+        <span class="q-badge ${qc}">${t.quality}</span>
+        <div class="t-meta">
+          ${t.size ? `<div>${esc(t.size)}</div>` : ''}
+          ${t.type ? `<div style="font-size:.72rem;opacity:.4">${esc(t.type)}</div>` : ''}
+        </div>
+        <div class="t-seeds ${sc}">↑ ${t.seeds}</div>
+        <div class="t-actions" onclick="event.stopPropagation()">
+          <button class="btn-copy" data-mag="${mag}" onclick="copyMag(this)">Copy</button>
+          <button class="btn-open" data-mag="${mag}" onclick="openMag(this)">Open</button>
+        </div>
+      </div>`;
+  }
+
+  function toggle(card) { card.classList.toggle('open'); }
+  function copyMag(btn) { navigator.clipboard.writeText(btn.dataset.mag).then(() => toast('Magnet link copied!')); }
+  function openMag(btn) { window.location.href = btn.dataset.mag; }
+
+  function toast(msg) {
+    const el = document.getElementById('toast');
+    el.textContent = msg;
+    el.classList.add('show');
+    setTimeout(() => el.classList.remove('show'), 2600);
+  }
+
+  function esc(s) {
+    return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+  }
+  function escAttr(s) { return esc(s); }
+</script>
+</body>
+</html>
