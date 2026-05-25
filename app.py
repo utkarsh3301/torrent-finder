@@ -533,23 +533,33 @@ def _cache_set(query, results):
 
 @app.route('/api/debug')
 def debug():
-    """Connectivity probe — visit /api/debug to see which sources are reachable."""
+    """Connectivity probe — runs all source checks in parallel."""
     probes = {
-        'apibay':        ('https://apibay.org/q.php',                       {'q': 'avatar', 'cat': '0'}),
-        'yts':           ('https://yts.mx/api/v2/list_movies.json',         {'query_term': 'avatar', 'limit': 1}),
-        'knaben':        ('https://knaben.eu/api/v1/',                       {'search': 'avatar', 'rows': 1}),
-        'solidtorrents': ('https://solidtorrents.to/api/v1/search',         {'q': 'avatar'}),
-        'btdig':         ('https://btdig.com/search',                        {'q': 'avatar', 'order': 1}),
-        'torrentgalaxy': ('https://torrentgalaxy.to/torrents.php',          {'search': 'avatar'}),
+        'apibay':        ('https://apibay.org/q.php',               {'q': 'avatar', 'cat': '0'}),
+        'yts':           ('https://yts.mx/api/v2/list_movies.json', {'query_term': 'avatar', 'limit': 1}),
+        'knaben':        ('https://knaben.eu/api/v1/',              {'search': 'avatar', 'rows': 1}),
+        'solidtorrents': ('https://solidtorrents.to/api/v1/search', {'q': 'avatar'}),
+        'btdig':         ('https://btdig.com/search',               {'q': 'avatar', 'order': 1}),
+        'torrentgalaxy': ('https://torrentgalaxy.to/torrents.php',  {'search': 'avatar'}),
     }
-    out = {}
-    for name, (url, params) in probes.items():
+
+    def probe(name, url, params):
         try:
-            r = _session.get(url, params=params, timeout=6)
-            out[name] = {'status': r.status_code, 'bytes': len(r.content),
-                         'preview': r.text[:300]}
+            r = requests.get(url, params=params, headers=HEADERS, timeout=5)
+            return name, {'status': r.status_code, 'bytes': len(r.content),
+                          'preview': r.content[:200].decode('utf-8', errors='replace')}
         except Exception as e:
-            out[name] = {'error': str(e)}
+            return name, {'error': str(e)[:120]}
+
+    out = {}
+    with concurrent.futures.ThreadPoolExecutor(max_workers=6) as ex:
+        fmap = {ex.submit(probe, n, u, p): n for n, (u, p) in probes.items()}
+        for f in concurrent.futures.as_completed(fmap, timeout=12):
+            try:
+                name, result = f.result()
+                out[name] = result
+            except Exception as e:
+                out[fmap[f]] = {'error': str(e)}
     return jsonify(out)
 
 @app.route('/')
