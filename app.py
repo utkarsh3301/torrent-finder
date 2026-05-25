@@ -413,55 +413,139 @@ def search_1337x(query):
 
 
 def search_knaben(query):
-    """Knaben meta-search — public API, works from data center IPs."""
+    """Knaben meta-search — scrape HTML search results (accessible from data centers)."""
     try:
         r = _session.get(
-            'https://knaben.eu/api/v1/',
-            params={
-                'search': query,
-                'order_by': 'seeders',
-                'order_direction': 'desc',
-                'rows': 20,
-            },
+            'https://knaben.eu/',
+            params={'search': query, 'order_by': 'seeders', 'order_direction': 'desc'},
             timeout=10,
         )
-        data  = r.json()
-        hits  = data.get('hits', [])
+        if r.status_code != 200:
+            return []
+        soup    = BeautifulSoup(r.text, 'html.parser')
         results = []
-        for item in hits:
-            ih     = item.get('infohash') or item.get('info_hash', '')
-            name   = item.get('title') or item.get('name', '')
-            seeds  = int(item.get('seeders') or 0)
-            leeches = int(item.get('leechers') or 0)
-            size   = item.get('size') or 0
-            if not ih or not name:
+        # Extract every magnet link on the page — Knaben embeds them in table rows
+        for mag_a in soup.find_all('a', href=re.compile(r'^magnet:', re.I))[:20]:
+            try:
+                mag   = mag_a['href']
+                ih_m  = re.search(r'btih:([a-fA-F0-9]{40})', mag, re.I)
+                if not ih_m:
+                    continue
+                ih    = ih_m.group(1).lower()
+                dn_m  = re.search(r'[?&]dn=([^&]+)', mag)
+                name  = urllib.parse.unquote_plus(dn_m.group(1)) if dn_m else ''
+                if not name:
+                    continue
+                # Seeds / size from the surrounding table row
+                row   = mag_a.find_parent('tr')
+                seeds, size = 0, ''
+                if row:
+                    sm = re.search(r'(\d+(?:\.\d+)?\s*(?:GiB|MiB|KiB|GB|MB|KB))', row.get_text(), re.I)
+                    if sm:
+                        size = sm.group(1)
+                    # Last two standalone numbers in the row are usually seeders / leechers
+                    nums = re.findall(r'(?<!\d)(\d{1,6})(?!\d)', row.get_text())
+                    if nums:
+                        seeds = int(nums[-2]) if len(nums) >= 2 else int(nums[-1])
+                is_tv = bool(re.search(r's\d{2}e\d{2}|season|episode', name.lower()))
+                results.append({
+                    'title':           name,
+                    'year':            '',
+                    'rating':          0,
+                    'genres':          [],
+                    'poster':          '',
+                    'type':            'tv' if is_tv else 'movie',
+                    'source':          'Knaben',
+                    'uploader_status': 'member',
+                    'uploader':        '',
+                    '_base':           clean_title(name),
+                    '_ctype':          'tv' if is_tv else 'movie',
+                    'torrents': [{
+                        'quality': get_quality(name),
+                        'type':    '',
+                        'size':    size,
+                        'seeds':   seeds,
+                        'peers':   0,
+                        'magnet':  mag,
+                    }],
+                })
+            except Exception:
                 continue
-            is_tv = bool(re.search(r's\d{2}e\d{2}|season|episode', name.lower()))
-            results.append({
-                'title':           name,
-                'year':            '',
-                'rating':          0,
-                'genres':          [],
-                'poster':          '',
-                'type':            'tv' if is_tv else 'movie',
-                'source':          'Knaben',
-                'uploader_status': 'member',
-                'uploader':        '',
-                '_base':           clean_title(name),
-                '_ctype':          'tv' if is_tv else 'movie',
-                'torrents': [{
-                    'quality': get_quality(name),
-                    'type':    '',
-                    'size':    format_size(size),
-                    'seeds':   seeds,
-                    'peers':   leeches,
-                    'magnet':  build_magnet(ih, name),
-                }],
-            })
-        results.sort(key=lambda x: x['torrents'][0]['seeds'], reverse=True)
         return results
     except Exception as e:
         app.logger.warning(f'Knaben: {e}')
+        return []
+
+
+def search_btdig(query):
+    """BTDigg DHT search — accessible from data centers (scrapes HTML)."""
+    try:
+        r = _session.get(
+            'https://btdig.com/search',
+            params={'q': query, 'order': 1, 'p': 0},
+            timeout=10,
+        )
+        if r.status_code == 429:
+            time.sleep(3)
+            r = _session.get(
+                'https://btdig.com/search',
+                params={'q': query, 'order': 1, 'p': 0},
+                timeout=10,
+            )
+        if r.status_code != 200:
+            app.logger.warning(f'BTDigg: HTTP {r.status_code}')
+            return []
+        soup    = BeautifulSoup(r.text, 'html.parser')
+        results = []
+        for div in soup.select('div.one_result')[:12]:
+            try:
+                a    = div.select_one('div.torrent_name a')
+                if not a:
+                    continue
+                name = a.text.strip()
+                href = a.get('href', '')
+                # Infohash from href (/hash/HEX or /HEX) or magnet link
+                mag_a = div.find('a', href=re.compile(r'^magnet:', re.I))
+                if mag_a:
+                    ih_m = re.search(r'btih:([a-fA-F0-9]{40})', mag_a['href'], re.I)
+                else:
+                    ih_m = re.search(r'([a-fA-F0-9]{40})', href)
+                if not ih_m:
+                    continue
+                ih   = ih_m.group(1).lower()
+                # Size anywhere in the result block
+                size = ''
+                sm   = re.search(r'(\d+(?:\.\d+)?\s*(?:GiB|MiB|KiB|GB|MB|KB))',
+                                  div.get_text(), re.I)
+                if sm:
+                    size = sm.group(1)
+                is_tv = bool(re.search(r's\d{2}e\d{2}|season|episode', name.lower()))
+                results.append({
+                    'title':           name,
+                    'year':            '',
+                    'rating':          0,
+                    'genres':          [],
+                    'poster':          '',
+                    'type':            'tv' if is_tv else 'movie',
+                    'source':          'BTDigg',
+                    'uploader_status': 'member',
+                    'uploader':        '',
+                    '_base':           clean_title(name),
+                    '_ctype':          'tv' if is_tv else 'movie',
+                    'torrents': [{
+                        'quality': get_quality(name),
+                        'type':    '',
+                        'size':    size,
+                        'seeds':   60,   # DHT — live seeder count unavailable
+                        'peers':   0,
+                        'magnet':  build_magnet(ih, name),
+                    }],
+                })
+            except Exception:
+                continue
+        return results
+    except Exception as e:
+        app.logger.warning(f'BTDigg: {e}')
         return []
 
 
@@ -583,12 +667,14 @@ def search():
         return jsonify({'results': cached, 'count': len(cached),
                         'proxy_active': bool(get_proxy()), 'cached': True})
 
-    with concurrent.futures.ThreadPoolExecutor(max_workers=4) as ex:
+    with concurrent.futures.ThreadPoolExecutor(max_workers=5) as ex:
         tpb_f = ex.submit(search_tpb,    query)
         yts_f = ex.submit(search_yts,    query)
         x13_f = ex.submit(search_1337x,  query)
         knb_f = ex.submit(search_knaben, query)
-        results = [*tpb_f.result(), *yts_f.result(), *x13_f.result(), *knb_f.result()]
+        btd_f = ex.submit(search_btdig,  query)
+        results = [*tpb_f.result(), *yts_f.result(), *x13_f.result(),
+                   *knb_f.result(), *btd_f.result()]
 
     results = enrich_posters(results)
     results = mark_best_pick(results)

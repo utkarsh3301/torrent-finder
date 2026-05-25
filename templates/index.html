@@ -203,6 +203,7 @@
     .b-yts   { background:rgba(0,200,100,.12);  color:var(--green);border:1px solid rgba(0,200,100,.2); }
     .b-1337x  { background:rgba(255,90,90,.12);  color:#ff6060;border:1px solid rgba(255,90,90,.2); }
     .b-knaben { background:rgba(0,180,255,.12);  color:#60cfff;border:1px solid rgba(0,180,255,.2); }
+    .b-BTDigg { background:rgba(255,165,0,.12);  color:#ffa500;border:1px solid rgba(255,165,0,.2); }
     .b-type   { background:rgba(255,255,255,.05);color:var(--muted);border:1px solid var(--glass-border); }
 
     /* Trust badge — only "Trusted", no VIP */
@@ -436,7 +437,7 @@
 
   // ── Card builder ──
   const Q_CLS = {'4K':'q-4K','1080p':'q-1080p','720p':'q-720p','480p':'q-480p','HD':'q-HD'};
-  const SRC_CLS = { TPB: 'b-tpb', YTS: 'b-yts', '1337x': 'b-1337x', Knaben: 'b-knaben' };
+  const SRC_CLS = { TPB: 'b-tpb', YTS: 'b-yts', '1337x': 'b-1337x', Knaben: 'b-knaben', BTDigg: 'b-BTDigg' };
 
   function seedCls(n) { return n > 100 ? 's-high' : n > 20 ? 's-mid' : 's-low'; }
 
