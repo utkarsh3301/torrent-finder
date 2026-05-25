@@ -528,6 +528,27 @@ def _cache_set(query, results):
 
 # ── Routes ────────────────────────────────────────────────────────────────────
 
+@app.route('/api/debug')
+def debug():
+    """Connectivity probe — visit /api/debug to see which sources are reachable."""
+    probes = {
+        'apibay':        ('https://apibay.org/q.php',                       {'q': 'avatar', 'cat': '0'}),
+        'yts':           ('https://yts.mx/api/v2/list_movies.json',         {'query_term': 'avatar', 'limit': 1}),
+        'knaben':        ('https://knaben.eu/api/v1/',                       {'search': 'avatar', 'rows': 1}),
+        'solidtorrents': ('https://solidtorrents.to/api/v1/search',         {'q': 'avatar'}),
+        'btdig':         ('https://btdig.com/search',                        {'q': 'avatar', 'order': 1}),
+        'torrentgalaxy': ('https://torrentgalaxy.to/torrents.php',          {'search': 'avatar'}),
+    }
+    out = {}
+    for name, (url, params) in probes.items():
+        try:
+            r = _session.get(url, params=params, timeout=6)
+            out[name] = {'status': r.status_code, 'bytes': len(r.content),
+                         'preview': r.text[:300]}
+        except Exception as e:
+            out[name] = {'error': str(e)}
+    return jsonify(out)
+
 @app.route('/')
 def index():
     return render_template('index.html')
