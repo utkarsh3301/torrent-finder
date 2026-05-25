@@ -153,7 +153,7 @@ def _fetch_proxy_list():
     return items
 
 
-def _test_proxy(proxy, test_url='https://yts.mx', timeout=4):
+def _test_proxy(proxy, test_url='http://httpbin.org/ip', timeout=4):
     p = {'http': f'http://{proxy}', 'https': f'http://{proxy}'}
     try:
         r = requests.get(test_url, proxies=p, timeout=timeout, allow_redirects=True)
@@ -176,17 +176,20 @@ def _find_and_cache_proxy():
             batch = proxy_list[i:i + 20]
             with concurrent.futures.ThreadPoolExecutor(max_workers=20) as ex:
                 fmap = {ex.submit(_test_proxy, p): p for p in batch}
-                for f in concurrent.futures.as_completed(fmap, timeout=10):
-                    try:
-                        if f.result():
-                            found = fmap[f]
-                            with _proxy_lock:
-                                _proxy['value']    = found
-                                _proxy['found_at'] = time.time()
-                            app.logger.info(f'Proxy: working proxy cached')
-                            return
-                    except Exception:
-                        pass
+                try:
+                    for f in concurrent.futures.as_completed(fmap, timeout=10):
+                        try:
+                            if f.result():
+                                found = fmap[f]
+                                with _proxy_lock:
+                                    _proxy['value']    = found
+                                    _proxy['found_at'] = time.time()
+                                app.logger.info('Proxy: working proxy cached')
+                                return
+                        except Exception:
+                            pass
+                except (concurrent.futures.TimeoutError, TimeoutError):
+                    pass  # some stragglers — continue to next batch
         app.logger.warning('Proxy: no working proxy found in this pass.')
         with _proxy_lock:
             _proxy['value'] = None
